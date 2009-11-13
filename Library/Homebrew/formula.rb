@@ -21,13 +21,8 @@
 #  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 #  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
-class ExecutionError <RuntimeError
-  def initialize cmd, args=[]
-    super "Failure while executing: #{cmd} #{args*' '}"
-  end
-end
-class BuildError <ExecutionError
-end
+require 'download_strategy'
+
 class FormulaUnavailableError <RuntimeError
   def initialize name
     @name = name
@@ -44,6 +39,7 @@ class Formula
   def initialize name='__UNKNOWN__'
     set_instance_variable 'url'
     set_instance_variable 'head'
+    set_instance_variable 'specs'
 
     if @head and (not @url or ARGV.flag? '--HEAD')
       @url=@head
@@ -83,7 +79,7 @@ class Formula
     self.class.path name
   end
 
-  attr_reader :url, :version, :homepage, :name
+  attr_reader :url, :version, :homepage, :name, :specs
 
   def bin; prefix+'bin' end
   def sbin; prefix+'sbin' end
@@ -107,6 +103,7 @@ class Formula
     when %r[^cvs://] then CVSDownloadStrategy
     when %r[^hg://] then MercurialDownloadStrategy
     when %r[^svn://] then SubversionDownloadStrategy
+    when %r[^svn+http://] then SubversionDownloadStrategy
     when %r[^git://] then GitDownloadStrategy
     when %r[^http://(.+?\.)?googlecode\.com/svn] then SubversionDownloadStrategy
     when %r[^http://(.+?\.)?sourceforge\.net/svnroot/] then SubversionDownloadStrategy
@@ -179,7 +176,8 @@ class Formula
 
   def self.class_s name
     #remove invalid characters and camelcase
-    name.capitalize.gsub(/[-_\s]([a-zA-Z0-9])/) { $1.upcase }
+    name.capitalize.gsub(/[-_.\s]([a-zA-Z0-9])/) { $1.upcase } \
+                   .gsub('+', 'x')
   end
 
   def self.factory name
@@ -218,26 +216,30 @@ protected
   # Pretty titles the command and buffers stdout/stderr
   # Throws if there's an error
   def system cmd, *args
-    full="#{cmd} #{args*' '}".strip
-    ohai full
+    ohai "#{cmd} #{args*' '}".strip
+
     if ARGV.verbose?
       safe_system cmd, *args
     else
-      out=''
-      # TODO write a ruby extension that does a good popen :P
-      IO.popen "#{full} 2>&1" do |f|
-        until f.eof?
-          out+=f.gets
-        end
+      rd, wr = IO.pipe
+      pid = fork do
+        rd.close
+        $stdout.reopen wr
+        $stderr.reopen wr
+        exec(cmd, *args) rescue nil
+        exit! 1 # never gets here unless exec threw or failed
       end
-      unless $? == 0
-        puts "Exit code: #{$?}"
+      wr.close
+      out = ''
+      out << rd.read until rd.eof?
+      Process.wait
+      unless $?.success?
         puts out
         raise
       end
     end
   rescue
-    raise BuildError.new(cmd, args)
+    raise BuildError.new(cmd, args, $?)
   end
 
 private
@@ -270,7 +272,7 @@ private
     hash=Digest.const_get(type).hexdigest(fn.read)
 
     if supplied and not supplied.empty?
-      raise "#{type} mismatch: #{hash}" unless supplied.upcase == hash.upcase
+      raise "#{type} mismatch\nExpected: #{hash}\nArchive: #{fn}" unless supplied.upcase == hash.upcase
     else
       opoo "Cannot verify package integrity"
       puts "The formula did not provide a download checksum"
@@ -279,7 +281,7 @@ private
   end
 
   def stage
-    ds=download_strategy.new url, name, version
+    ds=download_strategy.new url, name, version, specs
     HOMEBREW_CACHE.mkpath
     dl=ds.fetch
     verify_download_integrity dl if dl.kind_of? Pathname
@@ -378,7 +380,14 @@ private
       end
     end
 
-    attr_rw :url, :version, :homepage, :head, :deps, *CHECKSUM_TYPES
+    attr_rw :url, :version, :homepage, :specs, :deps, *CHECKSUM_TYPES
+
+    def head val=nil, specs=nil
+      if specs
+        @specs = specs
+      end
+      val.nil? ? @head : @head = val
+    end
 
     def depends_on name, *args
       @deps ||= []

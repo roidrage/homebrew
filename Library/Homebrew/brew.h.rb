@@ -22,6 +22,7 @@
 #  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 FORMULA_META_FILES = %w[README ChangeLog COPYING LICENSE COPYRIGHT AUTHORS]
+PLEASE_REPORT_BUG = "#{Tty.white}Please report this bug to #{Tty.em}#{HOMEBREW_WWW}#{Tty.reset}"
 
 def __make url, name
   require 'formula'
@@ -30,7 +31,7 @@ def __make url, name
   raise "#{path} already exists" if path.exist?
 
   template=<<-EOS
-            require 'brewkit'
+            require 'formula'
 
             class #{Formula.class_s name} <Formula
               url '#{url}'
@@ -102,17 +103,21 @@ def make url
     end
   end
 
-  case name
-  when /libxml/, /libxlst/, /freetype/, /libpng/
+  force_text = "If you really want to make this formula use --force."
+
+  case name.downcase
+  when /libxml/, /libxlst/, /freetype/, /libpng/, /wxwidgets/
     raise <<-EOS
 #{name} is blacklisted for creation
 Apple distributes this library with OS X, you can find it in /usr/X11/lib.
 However not all build scripts look here, so you may need to call ENV.x11 or
 ENV.libxml2 in your formula's install function.
+
+#{force_text}
     EOS
-  when 'mercurial'
-    raise "Mercurial is blacklisted for creation because it is provided by easy_install"
-  end
+  when /rubygem/
+    raise "Sorry RubyGems comes with OS X so we don't package it.\n\n#{force_text}"
+  end unless ARGV.force?
 
   __make url, name
 end
@@ -132,6 +137,10 @@ def info name
   f=Formula.factory name
   puts "#{f.name} #{f.version}"
   puts f.homepage
+
+  if not f.deps.empty?
+    puts "Depends on: #{f.deps.join(', ')}"
+  end
 
   if f.prefix.parent.directory?
     kids=f.prefix.parent.children
@@ -256,44 +265,36 @@ def diy
   end
 end
 
-
-def warn_about_macports_or_fink
+def macports_or_fink_installed?
   # See these issues for some history:
   # http://github.com/mxcl/homebrew/issues/#issue/13
   # http://github.com/mxcl/homebrew/issues/#issue/41
   # http://github.com/mxcl/homebrew/issues/#issue/48
-  
+
   %w[port fink].each do |ponk|
     path = `/usr/bin/which -s #{ponk}`
-    unless path.empty?
-      opoo "It appears you have Macports or Fink in your PATH"
-      puts "If formula fail to build try renaming or uninstalling these tools."
-    end
+    return ponk unless path.empty?
   end
-  
+
   # we do the above check because macports can be relocated and fink may be
   # able to be relocated in the future. This following check is because if
   # fink and macports are not in the PATH but are still installed it can
   # *still* break the build -- because some build scripts hardcode these paths:
   %w[/sw/bin/fink /opt/local/bin/port].each do |ponk|
-    if File.exist? ponk
-      opoo "It appears you have MacPorts or Fink installed"
-      puts "If formula fail to build, consider renaming: %s" % Pathname.new(ponk).dirname.parent
-    end
+    return ponk if File.exist? ponk
   end
-  
-  # finally sometimes people make their MacPorts or Fink read-only so they
+
+  # finally, sometimes people make their MacPorts or Fink read-only so they
   # can quickly test Homebrew out, but still in theory obey the README's 
   # advise to rename the root directory. This doesn't work, many build scripts
   # error out when they try to read from these now unreadable directories.
   %w[/sw /opt/local].each do |path|
-    if File.exist? path and not File.readable? path
-      opoo "It appears you have MacPorts or Fink installed"
-      puts "This has been known to cause build fails and other more subtle problems."
-    end
+    path = Pathname.new(path)
+    return path if path.exist? and not path.readable?
   end
+  
+  false
 end
-
 
 def versions_of(keg_name)
   `ls #{HOMEBREW_CELLAR}/#{keg_name}`.collect { |version| version.strip }.reverse
@@ -426,5 +427,17 @@ private
         clean_file path
       end
     end
+  end
+end
+
+def gcc_build
+  `/usr/bin/gcc-4.2 -v 2>&1` =~ /build (\d{4,})/
+  $1.to_i
+end
+
+def llvm_build
+  if MACOS_VERSION >= 10.6
+    `/Developer/usr/bin/llvm-gcc-4.2 -v 2>&1` =~ /LLVM build (\d{4,})/  
+    $1.to_i
   end
 end

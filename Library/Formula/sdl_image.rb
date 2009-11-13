@@ -1,27 +1,23 @@
-require 'brewkit'
+require 'formula'
+require Formula.path('sdl')
 
 class SdlImage <Formula
-  url 'http://www.libsdl.org/projects/SDL_image/release/SDL_image-1.2.7.tar.gz'
+  url 'http://www.libsdl.org/projects/SDL_image/release/SDL_image-1.2.8.tar.gz'
   homepage 'http://www.libsdl.org/projects/SDL_image'
-  md5 'a729ff61f74f0a45ec7fe36354cf938e'
+  md5 '2e7c3efa0ec2acc039c46960e27c0792'
 
   depends_on 'libpng'
   depends_on 'sdl'
 
   def install
     ENV.x11 # For Freetype
+    Sdl.use_homebrew_prefix 'SDL_image.pc.in'
 
     system "./configure", "--prefix=#{prefix}",
-                          "--includedir=#{prefix}/priv_include",
                           "--disable-debug",
                           "--disable-dependency-tracking",
                           "--disable-sdltest",
                           "--with-freetype-exec-prefix=/usr/X11"
     system "make install"
-
-    # Hack alert:
-    # Since SDL is installed as a dependency, we know it exists, so we
-    # symlink our new header file into its brewed location.
-    FileUtils.ln_s "#{prefix}/priv_include/SDL/SDL_image.h", "#{HOMEBREW_PREFIX}/include/SDL"
   end
 end
