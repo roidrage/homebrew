@@ -16,10 +16,14 @@ class Qt <Formula
       ['--with-qt3support', "Enable deprecated Qt3Support module."],
     ]
   end
+  
+  def self.x11?
+    File.exist? "/usr/X11R6/lib"
+  end
 
   depends_on "dbus" if ARGV.include? '--with-dbus'
   depends_on "dbus" if ARGV.include? '--with-qt3support'
-  depends_on 'libpng' unless File.exist? "/usr/X11R6/lib"
+  depends_on 'libpng' unless x11?
 
   def install
     if version == '4.5.3'
@@ -30,6 +34,7 @@ class Qt <Formula
 
     conf_args = ["-prefix", prefix,
                  "-system-sqlite", "-system-libpng", "-system-zlib",
+                 "-plugin-sql-mysql",
                  "-nomake", "demos", "-nomake", "examples",
                  "-release", "-cocoa",
                  "-confirm-license", "-opensource",
@@ -48,7 +53,7 @@ class Qt <Formula
       conf_args << "-no-qt3support"
     end
 
-    if File.exist? "/usr/X11R6/lib"
+    if x11?
       conf_args << "-L/usr/X11R6/lib"
       conf_args << "-I/usr/X11R6/include"
     else

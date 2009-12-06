@@ -7,7 +7,11 @@ class Postgresql <Formula
 
   depends_on 'readline'
 
+  aka 'postgres'
+
   def install
+    ENV.libxml2 # wouldn't compile for justinlilly otherwise
+    
     configure_args = [
         "--enable-thread-safety",
         "--with-bonjour",

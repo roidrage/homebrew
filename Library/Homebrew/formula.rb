@@ -22,6 +22,7 @@
 #  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 require 'download_strategy'
+require 'fileutils'
 
 class FormulaUnavailableError <RuntimeError
   def initialize name
@@ -33,8 +34,67 @@ class FormulaUnavailableError <RuntimeError
 end
 
 
+# The Formulary is the collection of all Formulae, of course.
+class Formulary
+  # Returns all formula names as strings, with or without aliases
+  def self.names with_aliases=false
+    everything = (HOMEBREW_REPOSITORY+'Library/Formula').children.map{|f| f.basename('.rb').to_s }
+    if with_aliases
+      everything.push *Formulary.get_aliases.keys
+    end
+    everything.sort
+  end
+
+  def self.paths
+    Dir["#{HOMEBREW_REPOSITORY}/Library/Formula/*.rb"]
+  end
+  
+  def self.read name
+    Formulary.names.each do |f|
+      next if f != name
+
+      require Formula.path(name)
+      klass_name = Formula.class_s(name)
+      klass = eval(klass_name)
+      return klass        
+    end
+    
+    return nil
+  end
+  
+  # Loads all formula classes.
+  def self.read_all
+    Formulary.names.each do |name|
+      require Formula.path(name)
+      klass_name = Formula.class_s(name)
+      klass = eval(klass_name)
+      
+      yield name, klass
+    end
+  end
+
+  def self.get_aliases
+    aliases = {}
+    Formulary.read_all do |name, klass|
+      aka = klass.aliases
+      next if aka == nil
+
+      aka.each {|item| aliases[item.to_s] = name }
+    end
+    return aliases
+  end
+  
+  def self.find_alias name
+    aliases = Formulary.get_aliases
+    return aliases[name]
+  end
+end
+
+
 # Derive and define at least @url, see Library/Formula for examples
 class Formula
+  include FileUtils
+  
   # Homebrew determines the name
   def initialize name='__UNKNOWN__'
     set_instance_variable 'url'
@@ -116,7 +176,7 @@ class Formula
   def caveats; nil end
 
   # patches are automatically applied after extracting the tarball
-  # return an array of strings, or if you need a patch level other than -p0
+  # return an array of strings, or if you need a patch level other than -p1
   # return a Hash eg.
   #   {
   #     :p0 => ['http://foo.com/patch1', 'http://foo.com/patch2'],
@@ -179,6 +239,22 @@ class Formula
     name.capitalize.gsub(/[-_.\s]([a-zA-Z0-9])/) { $1.upcase } \
                    .gsub('+', 'x')
   end
+  
+  def self.get_used_by
+    used_by = {}
+    Formulary.read_all do |name, klass|
+      deps = klass.deps
+      next if deps == nil
+
+      deps.each do |dep|
+        _deps = used_by[dep] || []
+        _deps << name unless _deps.include? name
+        used_by[dep] = _deps
+      end
+    end
+    
+    return used_by
+  end
 
   def self.factory name
     return name if name.kind_of? Formula
@@ -187,7 +263,15 @@ class Formula
       require name
       name = path.stem
     else
-      require self.path(name)
+      begin
+        require self.path(name)
+      rescue LoadError => e
+        # Couldn't find formula 'name', so look for an alias.
+        real_name = Formulary.find_alias name
+        raise e if real_name == nil
+        puts "#{name} is an alias for #{real_name}"
+        name = real_name
+      end
     end
     begin
       klass_name =self.class_s(name)
@@ -296,7 +380,7 @@ private
 
     ohai "Patching"
     if not patches.kind_of? Hash
-      # We assume -p0
+      # We assume -p1
       patch_defns = { :p1 => patches }
     else
       patch_defns = patches
@@ -380,13 +464,21 @@ private
       end
     end
 
-    attr_rw :url, :version, :homepage, :specs, :deps, *CHECKSUM_TYPES
+    attr_rw :url, :version, :homepage, :specs, :deps, :aliases, *CHECKSUM_TYPES
 
     def head val=nil, specs=nil
       if specs
         @specs = specs
       end
       val.nil? ? @head : @head = val
+    end
+    
+    def aka *args
+      @aliases ||= []
+
+      args.each do |item|
+        @aliases << item.to_s
+      end
     end
 
     def depends_on name, *args
