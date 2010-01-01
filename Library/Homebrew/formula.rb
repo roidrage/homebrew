@@ -39,9 +39,7 @@ class Formulary
   # Returns all formula names as strings, with or without aliases
   def self.names with_aliases=false
     everything = (HOMEBREW_REPOSITORY+'Library/Formula').children.map{|f| f.basename('.rb').to_s }
-    if with_aliases
-      everything.push *Formulary.get_aliases.keys
-    end
+    everything.push *Formulary.get_aliases.keys if with_aliases
     everything.sort
   end
 
@@ -50,16 +48,9 @@ class Formulary
   end
   
   def self.read name
-    Formulary.names.each do |f|
-      next if f != name
-
-      require Formula.path(name)
-      klass_name = Formula.class_s(name)
-      klass = eval(klass_name)
-      return klass        
-    end
-    
-    return nil
+    require Formula.path(name) rescue return nil
+    klass_name = Formula.class_s(name)
+    eval(klass_name)
   end
   
   # Loads all formula classes.
@@ -68,7 +59,6 @@ class Formulary
       require Formula.path(name)
       klass_name = Formula.class_s(name)
       klass = eval(klass_name)
-      
       yield name, klass
     end
   end
@@ -115,7 +105,6 @@ class Formula
     validate_variable :version if @version
     
     set_instance_variable 'homepage'
-#    raise if @homepage.nil? # not a good idea while we have eg GitManpages!
 
     CHECKSUM_TYPES.each do |type|
       set_instance_variable type
@@ -165,8 +154,9 @@ class Formula
     when %r[^svn://] then SubversionDownloadStrategy
     when %r[^svn+http://] then SubversionDownloadStrategy
     when %r[^git://] then GitDownloadStrategy
-    when %r[^http://(.+?\.)?googlecode\.com/svn] then SubversionDownloadStrategy
-    when %r[^http://(.+?\.)?sourceforge\.net/svnroot/] then SubversionDownloadStrategy
+    when %r[^https?://(.+?\.)?googlecode\.com/hg] then MercurialDownloadStrategy
+    when %r[^https?://(.+?\.)?googlecode\.com/svn] then SubversionDownloadStrategy
+    when %r[^https?://(.+?\.)?sourceforge\.net/svnroot/] then SubversionDownloadStrategy
     when %r[^http://svn.apache.org/repos/] then SubversionDownloadStrategy
     else CurlDownloadStrategy
     end
@@ -197,7 +187,7 @@ class Formula
   # redefining skip_clean? in formulas is now deprecated
   def skip_clean? path
     to_check = path.relative_path_from(prefix).to_s
-    self.class.skip_clean_paths.include?(to_check)
+    self.class.skip_clean_paths.include? to_check
   end
 
   # yields self with current working directory set to the uncompressed tarball
@@ -289,7 +279,7 @@ class Formula
   end
 
   def self.path name
-    HOMEBREW_PREFIX+'Library'+'Formula'+"#{name.downcase}.rb"
+    HOMEBREW_REPOSITORY+"Library/Formula/#{name.downcase}.rb"
   end
 
   def deps
@@ -322,7 +312,10 @@ protected
         raise
       end
     end
-  rescue
+  rescue SystemCallError
+    # usually because exec could not be find the command that was requested
+    raise
+  rescue 
     raise BuildError.new(cmd, args, $?)
   end
 
@@ -442,7 +435,7 @@ private
   end
 
   def set_instance_variable(type)
-    if !instance_variable_defined?("@#{type}")
+    unless instance_variable_defined? "@#{type}"
       class_value = self.class.send(type)
       instance_variable_set("@#{type}", class_value) if class_value
     end
@@ -475,10 +468,7 @@ private
     
     def aka *args
       @aliases ||= []
-
-      args.each do |item|
-        @aliases << item.to_s
-      end
+      args.each { |item| @aliases << item.to_s }
     end
 
     def depends_on name, *args

@@ -132,7 +132,8 @@ begin
         exec_editor *paths
       end
 
-    when 'up', 'update'
+  when 'up', 'update'
+    if system "/usr/bin/which -s git"
       require 'update'
       updater = RefreshBrew.new
       old_revision = updater.current_revision
@@ -147,6 +148,9 @@ begin
           puts "No formulae were updated." unless updater.pending_formulae_changes?
         end
       end
+    else
+      abort "Please `brew install git' first."
+    end
 
     when 'ln', 'link'
       ARGV.kegs.each {|keg| puts "#{keg.link} links created for #{keg}"}
@@ -157,8 +161,8 @@ begin
     when 'rm', 'uninstall', 'remove'
       ARGV.kegs.each do |keg|
         puts "Uninstalling #{keg}..."
-        keg.uninstall
         keg.unlink
+        keg.uninstall
       end
 
     when 'prune'
@@ -215,10 +219,16 @@ begin
     raise "Cannot write to #{HOMEBREW_PREFIX}" unless HOMEBREW_PREFIX.writable?
 
     ################################################################# warnings
-    if MACOS_VERSION >= 10.6
-      opoo "You should upgrade to Xcode 3.2.1" if llvm_build < 2206
-    else
-      opoo "You should upgrade to Xcode 3.1.4" if gcc_build < 5577
+    begin
+      if MACOS_VERSION >= 10.6
+        opoo "You should upgrade to Xcode 3.2.1" if llvm_build < 2206
+      else
+        opoo "You should upgrade to Xcode 3.1.4" if gcc_build < 5577
+      end
+    rescue
+      # the reason we don't abort is some formula don't require Xcode
+      # TODO allow formula to declare themselves as "not needing Xcode"
+      opoo "Xcode is not installed! Builds may fail!"
     end
 
     if macports_or_fink_installed?
@@ -271,7 +281,7 @@ begin
       checked = {}
       to_check = [name]
 
-      while ! to_check.empty?
+      until to_check.empty?
         item = to_check.pop
         checked[item] = true
         
@@ -290,9 +300,13 @@ begin
       end
     end
 
-  when 'pull', 'push', 'checkout', 'branch'
+  when 'branch', 'checkout', 'pull', 'push', 'reset'
     onoe "Unknown command: #{arg} (did you mean 'git #{arg}'?)"
     
+  when 'cat'
+    Dir.chdir HOMEBREW_REPOSITORY
+    exec "cat", ARGV.formulae.first.path, *ARGV.options
+
   else
     onoe "Unknown command: #{arg}"
   end

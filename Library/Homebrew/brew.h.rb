@@ -21,7 +21,7 @@
 #  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 #  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
-FORMULA_META_FILES = %w[README ChangeLog COPYING LICENSE COPYRIGHT AUTHORS]
+FORMULA_META_FILES = %w[README README.md ChangeLog COPYING LICENSE COPYRIGHT AUTHORS]
 PLEASE_REPORT_BUG = "#{Tty.white}Please report this bug at #{Tty.em}http://github.com/mxcl/homebrew/issues#{Tty.reset}"
 
 def check_for_blacklisted_formula names
@@ -29,12 +29,14 @@ def check_for_blacklisted_formula names
 
   names.each do |name|
     case name
-    when 'bazaar', 'bzr' then abort <<-EOS
-Bazaar can be installed thusly:
-
-    brew install pip && pip install bzr==2.0.1
-
-    EOS
+      # bazaar don't maintain their PyPi entry properly yet
+      # when they do we'll remove our formula and use that
+#    when 'bazaar', 'bzr' then abort <<-EOS
+#Bazaar can be installed thusly:
+#
+#    brew install pip && pip install bzr==2.0.1
+#
+#    EOS
     when 'mercurial', 'hg' then abort <<-EOS
 Mercurial can be install thusly:
 
@@ -150,25 +152,34 @@ ENV.libxml2 in your formula's install function.
   __make url, name
 end
 
+def github_info name
+  formula_name = Formula.path(name).basename
+  user = ''
+  branch = ''
+
+  if system "/usr/bin/which -s git"
+    user=`git config --global github.user`.chomp
+    all_branches = `git branch 2>/dev/null`
+     /^\*\s*(.*)/.match all_branches
+    branch = ($1 || '').chomp
+  end
+  
+  user = 'mxcl' if user.empty?
+  branch = 'master' if user.empty?
+
+  return "http://github.com/#{user}/homebrew/commits/#{branch}/Library/Formula/#{formula_name}"
+end
 
 def info name
   require 'formula'
 
-  user=''
-  user=`git config --global github.user`.chomp if system "/usr/bin/which -s git"
-  user='mxcl' if user.empty?
-  # FIXME it would be nice if we didn't assume the default branch is master
-  history="http://github.com/#{user}/homebrew/commits/master/Library/Formula/#{Formula.path(name).basename}"
-
-  exec 'open', history if ARGV.flag? '--github'
+  exec 'open', github_info(name) if ARGV.flag? '--github'
 
   f=Formula.factory name
   puts "#{f.name} #{f.version}"
   puts f.homepage
 
-  if not f.deps.empty?
-    puts "Depends on: #{f.deps.join(', ')}"
-  end
+  puts "Depends on: #{f.deps.join(', ')}" unless f.deps.empty?
 
   if f.prefix.parent.directory?
     kids=f.prefix.parent.children
@@ -187,7 +198,8 @@ def info name
     puts
   end
 
-  puts history
+  history = github_info(name)
+  puts history if history
 
 rescue FormulaUnavailableError
   # check for DIY installation
@@ -220,15 +232,6 @@ def clean f
       d.rmdir
     end
   end
-end
-
-
-def expand_deps ff
-  deps = []
-  ff.deps.collect do |f|
-    deps += expand_deps(Formula.factory(f))
-  end
-  deps << ff
 end
 
 
@@ -462,6 +465,12 @@ def gcc_build
   `/usr/bin/gcc-4.2 -v 2>&1` =~ /build (\d{4,})/
   if $1
     $1.to_i 
+  elsif system "/usr/bin/which gcc"
+    # Xcode 3.0 didn't come with gcc-4.2
+    # We can't change the above regex to use gcc because the version numbers
+    # are different and thus, not useful.
+    # FIXME I bet you 20 quid this causes a side effect — magic values tend to
+    401
   else
     nil
   end
