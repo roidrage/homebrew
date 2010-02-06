@@ -38,7 +38,8 @@ end
 class Formulary
   # Returns all formula names as strings, with or without aliases
   def self.names with_aliases=false
-    everything = (HOMEBREW_REPOSITORY+'Library/Formula').children.map{|f| f.basename('.rb').to_s }
+    filenames = (HOMEBREW_REPOSITORY+'Library/Formula').children.select {|f| f.to_s =~ /\.rb$/ }
+    everything = filenames.map{|f| f.basename('.rb').to_s }
     everything.push *Formulary.get_aliases.keys if with_aliases
     everything.sort
   end
@@ -53,8 +54,8 @@ class Formulary
     eval(klass_name)
   end
   
-  # Loads all formula classes.
   def self.read_all
+  # yields once for each
     Formulary.names.each do |name|
       require Formula.path(name)
       klass_name = Formula.class_s(name)
@@ -63,6 +64,8 @@ class Formulary
     end
   end
 
+  # returns a map of aliases to actual names
+  # eg { 'ocaml' => 'objective-caml' }
   def self.get_aliases
     aliases = {}
     Formulary.read_all do |name, klass|
@@ -96,7 +99,7 @@ class Formula
       @version='HEAD'
     end
 
-    raise if @url.nil?
+    raise "No url provided for formula #{name}" if @url.nil?
     @name=name
     validate_variable :name
 
@@ -109,6 +112,8 @@ class Formula
     CHECKSUM_TYPES.each do |type|
       set_instance_variable type
     end
+
+    @downloader=download_strategy.new url, name, version, specs
   end
 
   # if the dir is there, but it's empty we consider it not installed
@@ -154,6 +159,7 @@ class Formula
     when %r[^svn://] then SubversionDownloadStrategy
     when %r[^svn+http://] then SubversionDownloadStrategy
     when %r[^git://] then GitDownloadStrategy
+    when %r[^bzr://] then BazaarDownloadStrategy
     when %r[^https?://(.+?\.)?googlecode\.com/hg] then MercurialDownloadStrategy
     when %r[^https?://(.+?\.)?googlecode\.com/svn] then SubversionDownloadStrategy
     when %r[^https?://(.+?\.)?sourceforge\.net/svnroot/] then SubversionDownloadStrategy
@@ -221,11 +227,11 @@ class Formula
   # we could add --disable-dependency-tracking when it will work
   def std_cmake_parameters
     # The None part makes cmake use the environment's CFLAGS etc. settings
-    "-DCMAKE_INSTALL_PREFIX='#{prefix}' -DCMAKE_BUILD_TYPE=None"
+    "-DCMAKE_INSTALL_PREFIX='#{prefix}' -DCMAKE_BUILD_TYPE=None -Wno-dev"
   end
 
   def self.class_s name
-    #remove invalid characters and camelcase
+    #remove invalid characters and then camelcase it
     name.capitalize.gsub(/[-_.\s]([a-zA-Z0-9])/) { $1.upcase } \
                    .gsub('+', 'x')
   end
@@ -284,6 +290,10 @@ class Formula
 
   def deps
     self.class.deps or []
+  end
+
+  def external_deps
+    self.class.external_deps
   end
 
 protected
@@ -358,12 +368,15 @@ private
   end
 
   def stage
-    ds=download_strategy.new url, name, version, specs
     HOMEBREW_CACHE.mkpath
-    dl=ds.fetch
-    verify_download_integrity dl if dl.kind_of? Pathname
+
+    downloaded_tarball = @downloader.fetch
+    if downloaded_tarball.kind_of? Pathname
+      verify_download_integrity downloaded_tarball
+    end
+  
     mktemp do
-      ds.stage
+      @downloader.stage
       yield
     end
   end
@@ -457,7 +470,7 @@ private
       end
     end
 
-    attr_rw :url, :version, :homepage, :specs, :deps, :aliases, *CHECKSUM_TYPES
+    attr_rw :url, :version, :homepage, :specs, :deps, :external_deps, :aliases, *CHECKSUM_TYPES
 
     def head val=nil, specs=nil
       if specs
@@ -471,26 +484,31 @@ private
       args.each { |item| @aliases << item.to_s }
     end
 
-    def depends_on name, *args
+    def depends_on name
       @deps ||= []
+      @external_deps ||= {:python => [], :ruby => [], :perl => []}
 
       case name
       when String
         # noop
       when Hash
-        name = name.keys.first # indeed, we only support one mapping
+        key, value = name.shift
+        case value
+        when :python, :ruby, :perl
+          @external_deps[value] << key
+          return
+        when :optional, :recommended
+          name = key
+        end
       when Symbol
         name = name.to_s
       when Formula
-        @deps << name
-        return # we trust formula dev to not dupe their own instantiations
+        # noop
       else
         raise "Unsupported type #{name.class}"
       end
 
-      # we get duplicates because every new fork of this process repeats this
-      # step for some reason I am not sure about
-      @deps << name unless @deps.include? name
+      @deps << name
     end
 
     def skip_clean paths

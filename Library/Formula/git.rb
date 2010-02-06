@@ -1,22 +1,23 @@
 require 'formula'
 
 class GitManuals <Formula
-  url 'http://kernel.org/pub/software/scm/git/git-manpages-1.6.6.tar.bz2'
-  md5 '2f31c767576fa693b5b45244a022fdd3'
+  url 'http://kernel.org/pub/software/scm/git/git-manpages-1.6.6.1.tar.bz2'
+  md5 '18cbc20056058ef4d336896f628fc3b8'
 end
 
 class Git <Formula
-  url 'http://kernel.org/pub/software/scm/git/git-1.6.6.tar.bz2'
-  md5 '25e4bcdc528b3ffadc6e59908a513881'
+  url 'http://kernel.org/pub/software/scm/git/git-1.6.6.1.tar.bz2'
+  md5 '9d254bfdae56c6fa124d8a1312a1b034'
   homepage 'http://git-scm.com'
 
   def install
     # if these things are installed, tell git build system to not use them
     ENV['NO_FINK']='1'
     ENV['NO_DARWIN_PORTS']='1'
+    # If local::lib is used you get a 'Only one of PREFIX or INSTALL_BASE can be given' error
+    ENV['PERL_MM_OPT']='';
 
-    system "./configure --prefix=#{prefix}"
-    system "make install"
+    system "make", "prefix=#{prefix}", "install"
 
     # Install the git bash completion file
     (etc+'bash_completion.d').install 'contrib/completion/git-completion.bash'

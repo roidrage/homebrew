@@ -1,11 +1,11 @@
 require 'formula'
 
 class Clojure <Formula
-  url 'http://clojure.googlecode.com/files/clojure_1.0.0.zip'
-  md5 'e7a50129040df7fe52287006988ecbb2'
+  url 'http://clojure.googlecode.com/files/clojure-1.1.0.zip'
+  md5 '9c9e92f85351721b76f40578f5c1a94a'
   head 'git://github.com/richhickey/clojure.git'
   homepage 'http://clojure.org/'
-  JAR = "clojure-1.0.0.jar"
+  JAR = "clojure.jar"
 
   def script
     DATA.read.gsub 'CLOJURE_JAR_PATH_PLACEHOLDER', prefix+JAR
@@ -28,8 +28,8 @@ __END__
 CLOJURE=$CLASSPATH:CLOJURE_JAR_PATH_PLACEHOLDER
 
 if [ -z "$1" ]; then
-	java -server -cp $CLOJURE clojure.lang.Repl
+  java -server -cp $CLOJURE clojure.main
 else
-	scriptname=$1
-	java -server -cp $CLOJURE clojure.lang.Script $scriptname -- $*
+  scriptname=$1
+  java -server -cp $CLOJURE clojure.main -i $scriptname $*
 fi

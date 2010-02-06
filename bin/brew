@@ -62,9 +62,10 @@ Hardware: #{cores}-core #{bits}-bit #{Hardware.intel_family}
 OS X: #{MACOS_FULL_VERSION}
 Kernel Architecture: #{kernel_arch}
 Ruby: #{RUBY_VERSION}-#{RUBY_PATCHLEVEL}
-GCC-4.2: #{gcc ? "build #{gcc}" : "N/A"}
-LLVM: #{llvm ? "build #{llvm}" : "N/A" }
+GCC-4.2: #{gcc ? "build #{gcc}" : "N/A"} (5577 or newer recommended)
+LLVM: #{llvm ? "build #{llvm}" : "N/A" } #{llvm ? "(2206 or newer recommended)" : "" }
 MacPorts or Fink? #{macports_or_fink_installed?}
+X11 installed? #{x11_installed?}
 EOS
 end
 
@@ -74,6 +75,8 @@ begin
   case arg = ARGV.shift
   when '--prefix'
     puts HOMEBREW_PREFIX
+  when '--repository'
+    puts HOMEBREW_REPOSITORY
   when '--config'
     dump_config
 
@@ -204,6 +207,16 @@ begin
         ARGV.named.each {|name| info name}
       end
 
+  when 'cleanup'
+    if ARGV.named.empty?
+      require 'formula'
+      HOMEBREW_CELLAR.children.each do |rack|
+        cleanup(rack.basename.to_s) if rack.directory?
+      end
+    else
+      ARGV.named.each { |name| cleanup name}
+    end
+
   when 'install'
     check_for_blacklisted_formula(ARGV.named)
     
@@ -292,6 +305,8 @@ begin
         to_check.push(*formula.deps.select{|g| !checked[g]})
       end
       
+      our_deps.uniq!
+      
       if our_deps.empty?
         puts "#{name} has no dependencies."
       else
@@ -330,7 +345,7 @@ rescue BuildError => e
   puts "http://github.com/mxcl/homebrew/blob/master/Library/Formula/#{formula_name}.rb#L#{$2}"
   ohai "Environment"
   dump_config
-  puts "Exit status: #{e.status.exitstatus}"
+  puts "Exit status: #{e.exit_status}"
   onoe e
   puts PLEASE_REPORT_BUG
   # this feature can be slow (depends on network conditions and if github is up)

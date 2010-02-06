@@ -1,18 +1,14 @@
 require 'formula'
+require 'hardware'
 
 class Qt <Formula
-  url 'http://get.qt.nokia.com/qt/source/qt-mac-opensource-src-4.5.3.tar.gz'
-  md5 '484e3739fdc51540218ed92f4b732881'
+  url 'http://get.qt.nokia.com/qt/source/qt-everywhere-opensource-src-4.6.1.tar.gz'
+  md5 '0542a4be6425451ab5f668c6899cac36'
   homepage 'http://www.qtsoftware.com'
-
-  def patches
-    # Give the option to use Qt3Support even when using Cocoa.
-    "http://qt.gitorious.org/+qt-iphone/qt/qt-iphone-clone/commit/106d7a210be1e6d52946b575a262e2c76c5e51e6.patch"
-  end
 
   def options
     [
-      ['--with-dbus', "Enable QtDBus module."],
+      ['--with-qtdbus', "Enable QtDBus module."],
       ['--with-qt3support', "Enable deprecated Qt3Support module."],
     ]
   end
@@ -21,28 +17,28 @@ class Qt <Formula
     File.exist? "/usr/X11R6/lib"
   end
 
-  depends_on "dbus" if ARGV.include? '--with-dbus'
-  depends_on "dbus" if ARGV.include? '--with-qt3support'
+  depends_on "d-bus" if ARGV.include? '--with-qtdbus'
   depends_on 'libpng' unless x11?
 
   def install
-    if version == '4.5.3'
-      # Reported 6 months ago (at 4.5.0-rc1), still not fixed in the this release! :(
+    if version == '4.6.1' # being specific so needs reconfirmed each version
+      # Bug reported here: http://bugreports.qt.nokia.com/browse/QTBUG-7630
       makefiles=%w[plugins/sqldrivers/sqlite/sqlite.pro 3rdparty/webkit/WebCore/WebCore.pro]
       makefiles.each { |makefile| `echo 'LIBS += -lsqlite3' >> src/#{makefile}` }
     end
 
     conf_args = ["-prefix", prefix,
                  "-system-sqlite", "-system-libpng", "-system-zlib",
-                 "-plugin-sql-mysql",
                  "-nomake", "demos", "-nomake", "examples",
                  "-release", "-cocoa",
                  "-confirm-license", "-opensource",
                  "-fast"]
 
-    if ARGV.include? '--with-dbus'
-      conf_args << "-I#{Formula.factory('dbus').lib}/dbus-1.0/include"
-      conf_args << "-I#{Formula.factory('dbus').include}/dbus-1.0"
+    conf_args << "-plugin-sql-mysql" if (HOMEBREW_CELLAR+"mysql").directory?
+
+    if ARGV.include? '--with-qtdbus'
+      conf_args << "-I#{Formula.factory('d-bus').lib}/dbus-1.0/include"
+      conf_args << "-I#{Formula.factory('d-bus').include}/dbus-1.0"
       conf_args << "-ldbus-1"
       conf_args << "-dbus-linked"
     end
@@ -61,7 +57,7 @@ class Qt <Formula
       conf_args << "-I#{Formula.factory('libpng').include}"
     end
 
-    if MACOS_VERSION >= 10.6
+    if MACOS_VERSION >= 10.6 and Hardware.is_64_bit?
       conf_args << '-arch' << 'x86_64'
     else
       conf_args << '-arch' << 'x86'
@@ -70,23 +66,23 @@ class Qt <Formula
     system "./configure", *conf_args
     system "make install"
 
-    # fuck weird prl files
+    # remove unneeded files
     `find #{lib} -name \*.prl -delete`
-    # fuck crazy disk usage
+    # stop crazy disk usage
     (prefix+'doc'+'html').rmtree
     (prefix+'doc'+'src').rmtree
-    # wtf are these anyway?
+    # what are these anyway?
     (bin+'Assistant_adp.app').rmtree
     (bin+'pixeltool.app').rmtree
     (bin+'qhelpconverter.app').rmtree
-    # we specified no debug already! :P
+    # remove debugging files that slipped through
     (lib+'libQtUiTools_debug.a').unlink
     (lib+'pkgconfig/QtUiTools_debug.pc').unlink
-    # meh
+    # remove porting file for non-humans
     (prefix+'q3porting.xml').unlink
   end
 
   def caveats
-    "We agreed to the Qt opensource license for you.\nIf this is unacceptable you should uninstall :P"
+    "We agreed to the Qt opensource license for you.\nIf this is unacceptable you should uninstall."
   end
 end

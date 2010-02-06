@@ -1,23 +1,25 @@
 require 'formula'
 
 class Uwsgi <Formula
-  url 'http://projects.unbit.it/downloads/uwsgi-0.9.3.tar.gz'
+  url 'http://projects.unbit.it/downloads/uwsgi-0.9.4.tar.gz'
   homepage 'http://projects.unbit.it/uwsgi/'
-  md5 'dd72040daea5a9ee982f3b3b98946ed9'
+  md5 '07c633072b48c9790fa5d4030c7c9aa3'
+
+  def python_version
+    `python -c "import sys; print '%s.%s' % sys.version_info[:2]"`.chomp
+  end
 
   def install
-    # Getting the current Python version to determine pythonX.Y-config
-    py_version = `python -c "import sys; print '%s.%s' % sys.version_info[:2]"`.chomp
-    # The arch flags should match your Python's arch flags.
-    archs = arch_for_command "`which python`"
-    arch_flags = ''
-    archs.each do |a|
-      arch_flags += " -arch #{a}"
+    case python_version
+    when '2.5'
+      makefile = "Makefile"
+      program = "uwsgi"
+    when '2.6'
+      makefile = "Makefile.Py26"
+      program = "uwsgi26"
     end
-    FileUtils.mv 'Makefile.OSX.ub.Py25', 'Makefile.OSX'
-    inreplace "Makefile.OSX", "python2.5-config", "python#{py_version}-config"
-    inreplace "Makefile.OSX", "-arch ppc -arch i386", "#{arch_flags}"
-    system "make -f Makefile.OSX"
-    bin.install "uwsgi"
+    
+    system "make -f #{makefile}"
+    bin.install program
   end
 end

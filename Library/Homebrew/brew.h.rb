@@ -21,7 +21,7 @@
 #  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 #  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
-FORMULA_META_FILES = %w[README README.md ChangeLog COPYING LICENSE COPYRIGHT AUTHORS]
+FORMULA_META_FILES = %w[README README.md ChangeLog COPYING LICENSE LICENCE COPYRIGHT AUTHORS]
 PLEASE_REPORT_BUG = "#{Tty.white}Please report this bug at #{Tty.em}http://github.com/mxcl/homebrew/issues#{Tty.reset}"
 
 def check_for_blacklisted_formula names
@@ -147,6 +147,16 @@ ENV.libxml2 in your formula's install function.
     EOS
   when /rubygem/
     raise "Sorry RubyGems comes with OS X so we don't package it.\n\n#{force_text}"
+  when /wxwidgets/
+    raise <<-EOS
+#{name} is blacklisted for creation
+An older version of wxWidgets is provided by Apple with OS X, but
+a formula for wxWidgets 2.8.10 is provided:
+
+    brew install wxmac
+
+  #{force_text}
+    EOS
   end unless ARGV.force?
 
   __make url, name
@@ -233,6 +243,27 @@ def issues_for_formula name
   issues
 rescue
   []
+end
+
+def cleanup name
+  require 'formula'
+
+  f = Formula.factory name
+
+  # we can't tell which one to keep in this circumstance
+  raise "The most recent version of #{name} is not installed" unless f.installed?
+
+  if f.prefix.parent.directory?
+    kids = f.prefix.parent.children
+    kids.each do |keg|
+      next if f.prefix == keg
+      print "Uninstalling #{keg}..."
+      FileUtils.rm_rf keg
+      puts
+    end
+  end
+
+  prune # seems like a good time to do some additional cleanup
 end
 
 def clean f
@@ -350,7 +381,7 @@ def macports_or_fink_installed?
 end
 
 def versions_of(keg_name)
-  `ls #{HOMEBREW_CELLAR}/#{keg_name}`.collect { |version| version.strip }.reverse
+  `/bin/ls #{HOMEBREW_CELLAR}/#{keg_name}`.collect { |version| version.strip }.reverse
 end
 
 
@@ -442,14 +473,19 @@ private
     puts "strip #{path}" if ARGV.verbose?
     path.chmod 0644 # so we can strip
     unless path.stat.nlink > 1
-      `strip #{args} #{path}`
+      system "strip", *(args+path)
     else
+      path = path.to_s.gsub ' ', '\\ '
+
       # strip unlinks the file and recreates it, thus breaking hard links!
       # is this expected behaviour? patch does it too… still, this fixes it
-      tmp=`mktemp -t #{path.basename}`.strip
-      `strip #{args} -o #{tmp} #{path}`
-      `cat #{tmp} > #{path}`
-      File.unlink tmp
+      tmp = `/usr/bin/mktemp -t homebrew_strip`.chomp
+      begin
+        `/usr/bin/strip #{args} -o #{tmp} #{path}`
+        `/bin/cat #{tmp} > #{path}`
+      ensure
+        FileUtils.rm tmp
+      end
     end
   end
 
@@ -457,7 +493,10 @@ private
     perms=0444
     case `file -h '#{path}'`
     when /Mach-O dynamically linked shared library/
-      strip path, '-SxX'
+      # Stripping libraries is causing no end of trouble
+      # Lets just give up, and try to do it manually in instances where it
+      # makes sense
+      #strip path, '-SxX'
     when /Mach-O [^ ]* ?executable/
       strip path
       perms=0555
@@ -503,4 +542,8 @@ def llvm_build
     `/Developer/usr/bin/llvm-gcc-4.2 -v 2>&1` =~ /LLVM build (\d{4,})/  
     $1.to_i
   end
+end
+
+def x11_installed?
+  Pathname.new('/usr/X11/lib/libpng.dylib').exist?
 end
