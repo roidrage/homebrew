@@ -77,6 +77,8 @@ begin
     puts HOMEBREW_PREFIX
   when '--repository'
     puts HOMEBREW_REPOSITORY
+  when '--cellar'
+    puts HOMEBREW_CELLAR
   when '--config'
     dump_config
 
@@ -217,6 +219,7 @@ begin
           opoo "Formula not found for #{e.name}"
         end
       end
+      prune # seems like a good time to do some additional cleanup
     else
       ARGV.named.each { |name| cleanup name}
     end
