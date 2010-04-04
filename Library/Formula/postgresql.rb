@@ -2,14 +2,21 @@ require 'formula'
 require 'hardware'
 
 class Postgresql <Formula
-  @homepage='http://www.postgresql.org/'
-  @url='http://ftp2.uk.postgresql.org/sites/ftp.postgresql.org/source/v8.4.2/postgresql-8.4.2.tar.bz2'
-  @md5='d738227e2f1f742d2f2d4ab56496c5c6'
+  homepage 'http://www.postgresql.org/'
+  url 'http://ftp2.uk.postgresql.org/sites/ftp.postgresql.org/source/v8.4.3/postgresql-8.4.3.tar.bz2'
+  md5 '7f70e7b140fb190f268837255582b07e'
 
   depends_on 'readline'
   depends_on 'libxml2' if MACOS_VERSION < 10.6 #system libxml is too old
 
   aka 'postgres'
+
+  def options
+    [
+      ['--no-python', 'Build without Python support.'],
+      ['--no-perl', 'Build without Perl support.']
+    ]
+  end
 
   def install
     ENV.libxml2 # wouldn't compile for justinlilly otherwise
@@ -17,18 +24,28 @@ class Postgresql <Formula
     configure_args = [
         "--enable-thread-safety",
         "--with-bonjour",
-        "--with-python",
-        "--with-perl",
         "--with-gssapi",
         "--with-krb5",
         "--with-openssl",
         "--with-libxml",
         "--with-libxslt",
         "--prefix=#{prefix}",
-        "--disable-debug",
+        "--disable-debug"
     ]
 
-    configure_args << "ARCHFLAGS='-arch x86_64'" if bits_64?
+    configure_args << "--with-python" unless ARGV.include? '--no-python'
+    configure_args << "--with-perl" unless ARGV.include? '--no-perl'
+
+    if bits_64? and not ARGV.include? '--no-python'
+      configure_args << "ARCHFLAGS='-arch x86_64'"
+
+      framework_python = Pathname.new "/Library/Frameworks/Python.framework/Versions/Current/Python"
+      if framework_python.exist? and not (archs_for_command framework_python).include? :x86_64
+        opoo "Detected a framework Python that does not have 64-bit support."
+        puts "You may experience linker problems. See:"
+        puts "http://osdir.com/ml/pgsql-general/2009-09/msg00160.html"
+      end
+    end
 
     # Fails on Core Duo with O4 and O3
     ENV.O2 if Hardware.intel_family == :core
@@ -68,7 +85,6 @@ EOS
       caveats << <<-EOS
 
 If you want to install the postgres gem, including ARCHFLAGS is recommended:
-
     env ARCHFLAGS="-arch x86_64" gem install postgres
 
 To install gems without sudo, see the Homebrew wiki.
