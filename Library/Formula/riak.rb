@@ -5,7 +5,7 @@ class Riak <Formula
   
   url 'http://downloads.basho.com/riak/riak-0.11/riak-0.11.0.tar.gz'
   homepage 'http://riak.basho.com'
-  sha1 "7fd74f79bceee0d3aa73fd0b261f5d9922275a15"
+  md5 '5792ac2b91ad71ccaee91d1ef9632348'
   
   skip_clean 'libexec/log'
   skip_clean 'libexec/log/sasl'
